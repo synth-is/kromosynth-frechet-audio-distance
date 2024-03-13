@@ -97,6 +97,9 @@ class FrechetAudioDistance:
             self.ckpt_dir = torch.hub.get_dir()
         self.__get_model(model_name=model_name, use_pca=use_pca, use_activation=use_activation)
 
+        self.background_embeds_path_to_embeds_dict = {}
+        self.background_embeds_path_to_mu_sigma_dict = {}
+
     def __get_model(self, model_name="vggish", use_pca=False, use_activation=False):
         """
         Params:
@@ -369,6 +372,94 @@ class FrechetAudioDistance:
         pool.join()
 
         return [k.get() for k in task_results]
+
+    def score_eval_embeddings(self,
+              eval_embeds,
+              background_embds_path=None,
+              cache_background_embeds_in_memory=False,
+              ):
+        """
+        Computes the Frechet Audio Distance (FAD) between a background_dir of audio files and a set of evaluation embeddings.
+
+        Parameters:
+        - background_dir (str): Path to the directory containing background audio files.
+        - eval_embeds (np.ndarray): Evaluation audio embeddings.
+        - background_embds_path (str, optional): Path to save/load background audio embeddings. If None, embeddings won't be saved.
+        - dtype (str, optional): Data type for loading audio. Default is "float32".
+
+        Returns:
+        - float: The Frechet Audio Distance (FAD) score between the two directories of audio files.
+        """
+        try:
+            if background_embds_path is not None and os.path.exists(background_embds_path):
+                if cache_background_embeds_in_memory:
+                    if background_embds_path in self.background_embeds_path_to_embeds_dict:
+                        print(f"[-------Frechet Audio Distance] Loading embeddings from dictionary at {background_embds_path}...")
+                        embds_background = self.background_embeds_path_to_embeds_dict[background_embds_path]
+                    else:
+                        print(f"[-------Frechet Audio Distance] Loading embeddings from {background_embds_path}...")
+                        embds_background = np.load(background_embds_path)
+                        self.background_embeds_path_to_embeds_dict[background_embds_path] = embds_background
+                else:
+                    if self.verbose:
+                        print(f"[-------Frechet Audio Distance] Loading embeddings from {background_embds_path}...")
+                    embds_background = np.load(background_embds_path)
+
+            # Check if embeddings are empty
+            if len(embds_background) == 0:
+                print("[Frechet Audio Distance] background set dir is empty, exiting...")
+                return -1
+            if len(eval_embeds) == 0:
+                print("[Frechet Audio Distance] eval set dir is empty, exiting...")
+                return -1
+
+            # Compute statistics and FAD score
+            if cache_background_embeds_in_memory:
+                if background_embds_path in self.background_embeds_path_to_mu_sigma_dict:
+                    mu_background, sigma_background = self.background_embeds_path_to_mu_sigma_dict[background_embds_path]
+                else:
+                    mu_background, sigma_background = self.calculate_embd_statistics(embds_background)
+                    self.background_embeds_path_to_mu_sigma_dict[background_embds_path] = (mu_background, sigma_background)
+            # mu_background, sigma_background = self.calculate_embd_statistics(embds_background)
+            
+            mu_eval, sigma_eval = self.calculate_embd_statistics(eval_embeds)
+
+            fad_score = self.calculate_frechet_distance(
+                mu_background,
+                sigma_background,
+                mu_eval,
+                sigma_eval
+            )
+
+            return fad_score
+        except Exception as e:
+            print(f"[Frechet Audio Distance] (score_eval_embeddings) An error occurred: {e}")
+            return -1
+
+    def extract_and_save_embeddings(self,
+                dir,
+                embds_path=None,
+                dtype="float32"
+                ):
+        """
+        Extracts and saves audio embeddings from a directory of audio files.
+
+        Parameters:
+        - dir (str): Path to the directory containing audio files.
+        - embds_path (str, optional): Path to save audio embeddings. If None, embeddings won't be saved.
+        - dtype (str, optional): Data type for loading audio. Default is "float32".
+        """
+        try:
+            # Load or compute embeddings
+            audio = self.__load_audio_files(dir, dtype=dtype)
+            embds = self.get_embeddings(audio, sr=self.sample_rate)
+            print(f"embds: {embds.shape}", embds)
+            if embds_path:
+                os.makedirs(os.path.dirname(embds_path), exist_ok=True)
+                np.save(embds_path, embds)
+        except Exception as e:
+            print(f"[Frechet Audio Distance] An error occurred: {e}")
+            
 
     def score(self,
               background_dir,

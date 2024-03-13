@@ -1,3 +1,7 @@
+A fork from https://github.com/gudgud96/frechet-audio-distance with the main difference of adding the function `score_eval_embeddings`, which instead of accepting two file system paths, for background and evaluation audio files (or pre-computed embeddings) like `score` does, it accepts the evaluaton embeddings as an incmoing parameter, while looking up pre-computed background embeddings from a file path.
+
+Also there is a `extract_and_save_embeddings` function, for pre-computing embeddings from audio files in a directory, used by the CLI in `compute_and_save_embeddings_from_dir.py`; example usage of the CLI can be found in `compute_and_save_embeddings.sh`.
+
 ## Frechet Audio Distance in PyTorch
 
 A lightweight library of Frechet Audio Distance calculation.
